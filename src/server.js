@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware - UPDATED CORS
 app.use(cors({
-  origin: '*',
+  origin: ['http://localhost:5173', 'https://lost-and-found-frontend-six.vercel.app'],
   credentials: true
 }));
 app.use(express.json());
