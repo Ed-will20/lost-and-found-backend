@@ -72,19 +72,10 @@ app.use((req, res) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
-╔═══════════════════════════════════════╗
-║   Lost & Found API Server Running    ║
-║                                       ║
-║   Port: ${PORT}                       ║
-║   Environment: ${process.env.NODE_ENV || 'development'}            ║
-║                                       ║
-║   Endpoints:                          ║
-║   - GET  /health                      ║
-║   - POST /api/auth/register           ║
-║   - POST /api/auth/login              ║
-║   - GET  /api/items                   ║
-║   - POST /api/items                   ║
-║   - And more...                       ║
-╚═══════════════════════════════════════╝
+    ╔═══════════════════════════════════════╗
+    ║   Lost & Found API Server Running     ║
+    ║   Port: ${PORT}                       ║
+    ║   Host: 0.0.0.0                       ║
+    ╚═══════════════════════════════════════╝
   `);
 });
