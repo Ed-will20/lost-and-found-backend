@@ -1,10 +1,12 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Check if DATABASE_URL is provided (Railway style)
-const pool = process.env.DATABASE_URL 
+// Prefer DATABASE_URL over individual variables
+const connectionString = process.env.DATABASE_URL;
+
+const pool = connectionString
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl: {
         rejectUnauthorized: false
       }
