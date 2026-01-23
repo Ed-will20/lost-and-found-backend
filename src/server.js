@@ -1,7 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+
+// Only load dotenv in development
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
@@ -10,9 +14,17 @@ const claimRoutes = require('./routes/claims');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware - UPDATED CORS
+// Debug: Log environment variables (remove after fixing)
+console.log('🔍 Environment Check:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PORT:', process.env.PORT);
+console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+console.log('CORS_ORIGIN:', process.env.CORS_ORIGIN);
+
+// Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://lost-and-found-frontend-six.vercel.app'],
+  origin: process.env.CORS_ORIGIN || '*',
   credentials: true
 }));
 app.use(express.json());
@@ -26,7 +38,8 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Lost and Found API is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV
   });
 });
 
