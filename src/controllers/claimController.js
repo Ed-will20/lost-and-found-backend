@@ -6,7 +6,6 @@ exports.createClaim = async (req, res) => {
     const { item_id } = req.params;
     const { proof_description } = req.body;
 
-    // Check if item exists and is still available
     const itemCheck = await pool.query(
       'SELECT * FROM items WHERE id = $1 AND status = $2',
       [item_id, 'found']
@@ -18,12 +17,10 @@ exports.createClaim = async (req, res) => {
 
     const item = itemCheck.rows[0];
 
-    // Prevent user from claiming their own item
     if (item.user_id === req.userId) {
       return res.status(400).json({ error: 'You cannot claim your own item' });
     }
 
-    // Check if user already has a pending claim for this item
     const existingClaim = await pool.query(
       'SELECT * FROM claims WHERE item_id = $1 AND claimer_id = $2 AND status = $3',
       [item_id, req.userId, 'pending']
@@ -33,10 +30,8 @@ exports.createClaim = async (req, res) => {
       return res.status(400).json({ error: 'You already have a pending claim for this item' });
     }
 
-    // Handle proof images
     const proof_images = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
 
-    // Create claim
     const result = await pool.query(
       `INSERT INTO claims (item_id, claimer_id, proof_images, proof_description)
        VALUES ($1, $2, $3, $4)
@@ -59,7 +54,6 @@ exports.getItemClaims = async (req, res) => {
   try {
     const { item_id } = req.params;
 
-    // Verify user owns the item
     const itemCheck = await pool.query(
       'SELECT user_id FROM items WHERE id = $1',
       [item_id]
@@ -73,9 +67,8 @@ exports.getItemClaims = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to view claims for this item' });
     }
 
-    // Get all claims with claimer information
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.*,
               u.full_name as claimer_name,
               u.email as claimer_email,
               u.phone_number as claimer_phone,
@@ -101,7 +94,7 @@ exports.getItemClaims = async (req, res) => {
 exports.getMyClaims = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.*,
               i.title as item_title,
               i.images as item_images,
               i.found_city,
@@ -125,14 +118,13 @@ exports.getMyClaims = async (req, res) => {
   }
 };
 
-// Approve a claim
+// Approve a claim — creates a chat between finder and claimer
 exports.approveClaim = async (req, res) => {
   try {
     const { claim_id } = req.params;
 
-    // Get claim and verify ownership
     const claimCheck = await pool.query(
-      `SELECT c.*, i.user_id as item_owner_id, i.id as item_id
+      `SELECT c.*, i.user_id as item_owner_id, i.id as item_id, i.title as item_title
        FROM claims c
        JOIN items i ON c.item_id = i.id
        WHERE c.id = $1`,
@@ -149,7 +141,6 @@ exports.approveClaim = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to approve this claim' });
     }
 
-    // Start transaction
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -162,8 +153,9 @@ exports.approveClaim = async (req, res) => {
 
       // Reject all other pending claims for this item
       await client.query(
-        'UPDATE claims SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE item_id = $2 AND id != $3 AND status = $4',
-        ['rejected', claim.item_id, claim_id, 'pending']
+        `UPDATE claims SET status = $1, rejection_reason = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE item_id = $3 AND id != $4 AND status = $5`,
+        ['rejected', 'Another claim was approved for this item.', claim.item_id, claim_id, 'pending']
       );
 
       // Update item status to claimed
@@ -172,9 +164,50 @@ exports.approveClaim = async (req, res) => {
         ['claimed', claim.item_id]
       );
 
+      // Create a chat between finder (item owner) and claimer
+      const chatResult = await client.query(
+        `INSERT INTO chats (item_id, finder_id, claimer_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [claim.item_id, claim.item_owner_id, claim.claimer_id]
+      );
+
+      let chatId = chatResult.rows[0]?.id;
+
+      // If chat already existed, fetch it
+      if (!chatId) {
+        const existingChat = await client.query(
+          'SELECT id FROM chats WHERE item_id = $1 AND finder_id = $2 AND claimer_id = $3',
+          [claim.item_id, claim.item_owner_id, claim.claimer_id]
+        );
+        chatId = existingChat.rows[0]?.id;
+      }
+
+      // Post an automatic first message in the chat
+      if (chatId) {
+        await client.query(
+          `INSERT INTO messages (chat_id, sender_id, message_text)
+           VALUES ($1, $2, $3)`,
+          [
+            chatId,
+            claim.item_owner_id,
+            `Hi! I've approved your claim for "${claim.item_title}". Let's coordinate how to return it — feel free to suggest a public meeting place or a mailing address.`
+          ]
+        );
+
+        await client.query(
+          'UPDATE chats SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
+          [chatId]
+        );
+      }
+
       await client.query('COMMIT');
 
-      res.json({ message: 'Claim approved successfully' });
+      res.json({
+        message: 'Claim approved successfully',
+        chat_id: chatId
+      });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -187,12 +220,12 @@ exports.approveClaim = async (req, res) => {
   }
 };
 
-// Reject a claim
+// Reject a claim — saves a reason
 exports.rejectClaim = async (req, res) => {
   try {
     const { claim_id } = req.params;
+    const { rejection_reason } = req.body;
 
-    // Get claim and verify ownership
     const claimCheck = await pool.query(
       `SELECT c.*, i.user_id as item_owner_id
        FROM claims c
@@ -211,13 +244,13 @@ exports.rejectClaim = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to reject this claim' });
     }
 
-    // Reject claim
     await pool.query(
-      'UPDATE claims SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      ['rejected', claim_id]
+      `UPDATE claims SET status = $1, rejection_reason = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      ['rejected', rejection_reason || 'Your claim was not approved by the finder.', claim_id]
     );
 
-    res.json({ message: 'Claim rejected successfully' });
+    res.json({ message: 'Claim rejected' });
   } catch (error) {
     console.error('Reject claim error:', error);
     res.status(500).json({ error: 'Server error while rejecting claim' });
