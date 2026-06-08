@@ -10,6 +10,7 @@ if (process.env.NODE_ENV !== 'production') {
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
 const claimRoutes = require('./routes/claims');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -47,6 +48,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api', claimRoutes);
+app.use('/api/chats', chatRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
