@@ -145,3 +145,22 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({ error: 'Server error while sending message' });
   }
 };
+
+// Get count of unread messages for the logged-in user
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) as count
+       FROM messages m
+       JOIN chats ch ON m.chat_id = ch.id
+       WHERE (ch.finder_id = $1 OR ch.claimer_id = $1)
+         AND m.sender_id != $1
+         AND m.read_status = false`,
+      [req.userId]
+    );
+    res.json({ unread: parseInt(result.rows[0].count) });
+  } catch (error) {
+    console.error('Unread count error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
