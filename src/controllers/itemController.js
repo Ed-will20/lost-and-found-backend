@@ -19,7 +19,7 @@ exports.createItem = async (req, res) => {
     } = req.body;
 
     // Handle uploaded images
-    const images = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
+    const images = req.files ? req.files.map(file => file.path) : [];
 
     // Convert empty strings to null for numeric fields
     const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
