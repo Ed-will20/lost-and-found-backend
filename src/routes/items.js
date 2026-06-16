@@ -4,7 +4,6 @@ const itemController = require('../controllers/itemController');
 const authMiddleware = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const validate = require('../middleware/validation');
-
 const router = express.Router();
 
 // Get all items (public, with filters)
@@ -23,7 +22,7 @@ router.get('/:id', itemController.getItemById);
 router.post(
   '/',
   authMiddleware,
-  upload.array('images', 5), // Max 5 images
+  upload.array('images', 5),
   [
     body('title').trim().notEmpty(),
     body('description').optional().trim(),
@@ -36,10 +35,11 @@ router.post(
   itemController.createItem
 );
 
-// Update item (protected)
+// Update item (protected, with optional image upload)
 router.put(
   '/:id',
   authMiddleware,
+  upload.array('images', 5),
   [
     body('title').optional().trim().notEmpty(),
     body('description').optional().trim(),

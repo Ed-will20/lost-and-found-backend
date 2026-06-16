@@ -18,21 +18,16 @@ exports.createItem = async (req, res) => {
       tags
     } = req.body;
 
-    // Handle uploaded images
     const images = req.files ? req.files.map(file => file.path) : [];
 
-    // Convert empty strings to null for numeric fields
     const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
     const longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
 
-    // Parse tags properly
     let parsedTags = [];
     if (tags) {
       try {
-        // If tags is a JSON string, parse it
         parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
       } catch (e) {
-        // If parsing fails, treat as comma-separated string
         parsedTags = tags.split(',').map(t => t.trim()).filter(t => t);
       }
     }
@@ -129,8 +124,8 @@ exports.getItemById = async (req, res) => {
     const { id } = req.params;
 
     const result = await pool.query(
-      `SELECT i.*, 
-              u.full_name as finder_name, 
+      `SELECT i.*,
+              u.full_name as finder_name,
               u.email as finder_email,
               u.phone_number as finder_phone,
               u.rating as finder_rating,
@@ -205,7 +200,6 @@ exports.searchNearby = async (req, res) => {
 exports.updateItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
 
     const itemCheck = await pool.query(
       'SELECT user_id FROM items WHERE id = $1',
@@ -220,33 +214,74 @@ exports.updateItem = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this item' });
     }
 
-    const allowedFields = ['title', 'description', 'status', 'category'];
-    const updateFields = [];
-    const values = [];
-    let paramIndex = 1;
+    const {
+      title,
+      description,
+      category,
+      found_address,
+      found_city,
+      found_state,
+      found_zip,
+      found_lat,
+      found_lng,
+      found_date,
+      tags
+    } = req.body;
 
-    Object.keys(updates).forEach(key => {
-      if (allowedFields.includes(key)) {
-        updateFields.push(`${key} = $${paramIndex}`);
-        values.push(updates[key]);
-        paramIndex++;
-      }
-    });
-
-    if (updateFields.length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
+    // If new images uploaded, use them; otherwise keep existing
+    let images = null;
+    if (req.files && req.files.length > 0) {
+      images = req.files.map(file => file.path);
     }
 
-    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(id);
+    // Parse tags
+    let parsedTags = null;
+    if (tags !== undefined && tags !== '') {
+      try {
+        parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+      } catch (e) {
+        parsedTags = tags.split(',').map(t => t.trim()).filter(t => t);
+      }
+    }
 
-    const query = `UPDATE items SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
-    const result = await pool.query(query, values);
+    const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
+    const longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
 
-    res.json({
-      message: 'Item updated successfully',
-      item: result.rows[0]
-    });
+    const result = await pool.query(
+      `UPDATE items SET
+        title        = COALESCE($1,  title),
+        description  = COALESCE($2,  description),
+        category     = COALESCE($3,  category),
+        found_address= COALESCE($4,  found_address),
+        found_city   = COALESCE($5,  found_city),
+        found_state  = COALESCE($6,  found_state),
+        found_zip    = COALESCE($7,  found_zip),
+        found_lat    = COALESCE($8,  found_lat),
+        found_lng    = COALESCE($9,  found_lng),
+        found_date   = COALESCE($10, found_date),
+        tags         = COALESCE($11, tags),
+        images       = COALESCE($12, images),
+        updated_at   = CURRENT_TIMESTAMP
+      WHERE id = $13
+      RETURNING *`,
+      [
+        title        || null,
+        description  || null,
+        category     || null,
+        found_address|| null,
+        found_city   || null,
+        found_state  || null,
+        found_zip    || null,
+        latitude,
+        longitude,
+        found_date   || null,
+        parsedTags,
+        images,
+        id
+      ]
+    );
+
+    res.json({ message: 'Item updated successfully', item: result.rows[0] });
   } catch (error) {
     console.error('Update item error:', error);
     res.status(500).json({ error: 'Server error while updating item' });
