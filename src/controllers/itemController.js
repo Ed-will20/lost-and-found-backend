@@ -86,7 +86,7 @@ exports.getItems = async (req, res) => {
     }
 
     if (state) {
-      query += ` AND i.found_state = $${paramIndex}`;
+      query += ` AND i.found_state ILIKE $${paramIndex}`;
       params.push(state);
       paramIndex++;
     }
@@ -228,13 +228,11 @@ exports.updateItem = async (req, res) => {
       tags
     } = req.body;
 
-    // If new images uploaded, use them; otherwise keep existing
     let images = null;
     if (req.files && req.files.length > 0) {
       images = req.files.map(file => file.path);
     }
 
-    // Parse tags
     let parsedTags = null;
     if (tags !== undefined && tags !== '') {
       try {
