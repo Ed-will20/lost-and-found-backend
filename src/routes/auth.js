@@ -3,7 +3,6 @@ const { body } = require('express-validator');
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
 const validate = require('../middleware/validation');
-
 const router = express.Router();
 
 // Register
@@ -31,6 +30,9 @@ router.post(
   ],
   authController.login
 );
+
+// Google OAuth
+router.post('/google', authController.googleAuth);
 
 // Get profile (protected route)
 router.get('/profile', authMiddleware, authController.getProfile);
