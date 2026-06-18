@@ -3,6 +3,7 @@ const { body } = require('express-validator');
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
 const validate = require('../middleware/validation');
+const upload = require('../middleware/upload');
 const router = express.Router();
 
 // Register
@@ -36,5 +37,13 @@ router.post('/google', authController.googleAuth);
 
 // Get profile (protected route)
 router.get('/profile', authMiddleware, authController.getProfile);
+
+// Upload/replace profile picture (protected route)
+router.put(
+  '/profile-picture',
+  authMiddleware,
+  upload.single('profile_picture'),
+  authController.uploadProfilePicture
+);
 
 module.exports = router;

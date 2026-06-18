@@ -186,3 +186,34 @@ exports.getProfile = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+// Upload/replace profile picture
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const profile_picture_url = req.file.path;
+
+    const result = await pool.query(
+      `UPDATE users SET profile_picture_url = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, email, full_name, phone_number, city, state, zip_code,
+                 profile_picture_url, verification_status, rating, created_at`,
+      [profile_picture_url, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      message: 'Profile picture updated successfully',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Upload profile picture error:', error);
+    res.status(500).json({ error: 'Server error while uploading profile picture' });
+  }
+};
