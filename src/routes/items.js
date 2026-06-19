@@ -30,6 +30,7 @@ router.post(
     body('found_city').optional().trim(),
     body('found_state').optional().trim(),
     body('found_zip').optional().trim(),
+    body('post_type').optional().isIn(['lost', 'found']),
     validate
   ],
   itemController.createItem
@@ -44,6 +45,7 @@ router.put(
     body('title').optional().trim().notEmpty(),
     body('description').optional().trim(),
     body('status').optional().isIn(['found', 'claimed', 'resolved']),
+    body('post_type').optional().isIn(['lost', 'found']),
     validate
   ],
   itemController.updateItem

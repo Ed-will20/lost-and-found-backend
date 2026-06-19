@@ -21,3 +21,8 @@ CREATE TABLE IF NOT EXISTS messages (
   read_status BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add post_type to items (lost vs found), separate from status lifecycle
+ALTER TABLE items ADD COLUMN IF NOT EXISTS post_type VARCHAR(10) NOT NULL DEFAULT 'found';
+ALTER TABLE items DROP CONSTRAINT IF EXISTS items_post_type_check;
+ALTER TABLE items ADD CONSTRAINT items_post_type_check CHECK (post_type IN ('lost', 'found'));

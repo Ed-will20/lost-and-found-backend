@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 
-// Create new found item
+// Create new item (found or lost)
 exports.createItem = async (req, res) => {
   try {
     const {
@@ -15,7 +15,8 @@ exports.createItem = async (req, res) => {
       found_lng,
       found_date,
       is_sensitive,
-      tags
+      tags,
+      post_type
     } = req.body;
 
     const images = req.files ? req.files.map(file => file.path) : [];
@@ -32,18 +33,20 @@ exports.createItem = async (req, res) => {
       }
     }
 
+    const resolvedPostType = post_type === 'lost' ? 'lost' : 'found';
+
     const result = await pool.query(
       `INSERT INTO items (
         user_id, title, description, category, images,
         found_address, found_city, found_state, found_zip,
-        found_lat, found_lng, found_date, is_sensitive, tags
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        found_lat, found_lng, found_date, is_sensitive, tags, post_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
         req.userId, title, description, category, images,
         found_address, found_city, found_state, found_zip,
         latitude, longitude, found_date, is_sensitive || false,
-        parsedTags
+        parsedTags, resolvedPostType
       ]
     );
 
@@ -65,6 +68,7 @@ exports.getItems = async (req, res) => {
       state,
       city,
       status = 'found',
+      post_type,
       limit = 50,
       offset = 0,
       search
@@ -78,6 +82,12 @@ exports.getItems = async (req, res) => {
     `;
     const params = [status];
     let paramIndex = 2;
+
+    if (post_type) {
+      query += ` AND i.post_type = $${paramIndex}`;
+      params.push(post_type);
+      paramIndex++;
+    }
 
     if (category) {
       query += ` AND i.category = $${paramIndex}`;
@@ -225,7 +235,8 @@ exports.updateItem = async (req, res) => {
       found_lat,
       found_lng,
       found_date,
-      tags
+      tags,
+      post_type
     } = req.body;
 
     let images = null;
@@ -245,6 +256,8 @@ exports.updateItem = async (req, res) => {
     const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
     const longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
 
+    const resolvedPostType = (post_type === 'lost' || post_type === 'found') ? post_type : null;
+
     const result = await pool.query(
       `UPDATE items SET
         title        = COALESCE($1,  title),
@@ -259,8 +272,9 @@ exports.updateItem = async (req, res) => {
         found_date   = COALESCE($10, found_date),
         tags         = COALESCE($11, tags),
         images       = COALESCE($12, images),
+        post_type    = COALESCE($13, post_type),
         updated_at   = CURRENT_TIMESTAMP
-      WHERE id = $13
+      WHERE id = $14
       RETURNING *`,
       [
         title        || null,
@@ -275,6 +289,7 @@ exports.updateItem = async (req, res) => {
         found_date   || null,
         parsedTags,
         images,
+        resolvedPostType,
         id
       ]
     );
