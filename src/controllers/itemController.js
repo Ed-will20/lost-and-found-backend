@@ -319,6 +319,21 @@ exports.deleteItem = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to delete this item' });
     }
 
+    // Block deletion if there's a pending or approved claim — must be resolved first
+    const blockingClaims = await pool.query(
+      `SELECT id, status FROM claims WHERE item_id = $1 AND status IN ('pending', 'approved')`,
+      [id]
+    );
+
+    if (blockingClaims.rows.length > 0) {
+      const hasApproved = blockingClaims.rows.some(c => c.status === 'approved');
+      return res.status(409).json({
+        error: hasApproved
+          ? 'This item has an approved claim with an active chat. It cannot be deleted.'
+          : 'This item has a pending claim. Please approve or reject it before deleting.'
+      });
+    }
+
     await pool.query('DELETE FROM items WHERE id = $1', [id]);
 
     res.json({ message: 'Item deleted successfully' });
