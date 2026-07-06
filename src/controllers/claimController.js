@@ -30,7 +30,7 @@ exports.createClaim = async (req, res) => {
       return res.status(400).json({ error: 'You already have a pending claim for this item' });
     }
 
-    const proof_images = req.files ? req.files.map(file => `/uploads/${file.filename}`) : [];
+    const proof_images = req.files ? req.files.map(file => file.path) : [];
 
     const result = await pool.query(
       `INSERT INTO claims (item_id, claimer_id, proof_images, proof_description)
