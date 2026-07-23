@@ -26,3 +26,6 @@ CREATE TABLE IF NOT EXISTS messages (
 ALTER TABLE items ADD COLUMN IF NOT EXISTS post_type VARCHAR(10) NOT NULL DEFAULT 'found';
 ALTER TABLE items DROP CONSTRAINT IF EXISTS items_post_type_check;
 ALTER TABLE items ADD CONSTRAINT items_post_type_check CHECK (post_type IN ('lost', 'found'));
+
+-- Referral tracking: tag which QR code / flier / link a user came from
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_source TEXT;

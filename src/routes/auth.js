@@ -16,6 +16,7 @@ router.post(
     body('city').optional().trim(),
     body('state').optional().trim(),
     body('zip_code').optional().trim(),
+    body('referral_source').optional().trim(),
     validate
   ],
   authController.register

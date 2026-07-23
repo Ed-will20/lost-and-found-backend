@@ -16,7 +16,7 @@ const generateToken = (userId) => {
 // Register new user
 exports.register = async (req, res) => {
   try {
-    const { email, password, full_name, phone_number, city, state, zip_code } = req.body;
+    const { email, password, full_name, phone_number, city, state, zip_code, referral_source } = req.body;
     const userExists = await pool.query(
       'SELECT * FROM users WHERE email = $1',
       [email]
@@ -27,10 +27,10 @@ exports.register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, email, full_name, city, state, zip_code, created_at`,
-      [email, password_hash, full_name, phone_number, city, state, zip_code]
+      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code, referral_source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, email, full_name, city, state, zip_code, referral_source, created_at`,
+      [email, password_hash, full_name, phone_number, city, state, zip_code, referral_source || null]
     );
     const user = result.rows[0];
     const token = generateToken(user.id);
@@ -96,7 +96,7 @@ exports.login = async (req, res) => {
 // Google OAuth login/register
 exports.googleAuth = async (req, res) => {
   try {
-    const { credential } = req.body;
+    const { credential, referral_source } = req.body;
     if (!credential) {
       return res.status(400).json({ error: 'Missing Google credential' });
     }
@@ -125,7 +125,7 @@ exports.googleAuth = async (req, res) => {
       if (!user.profile_picture_url && picture) {
         const updateRes = await pool.query(
           `UPDATE users SET profile_picture_url = $1, updated_at = NOW() WHERE id = $2
-           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, created_at`,
+           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, created_at`,
           [picture, user.id]
         );
         user = updateRes.rows[0];
@@ -137,10 +137,10 @@ exports.googleAuth = async (req, res) => {
       const password_hash = await bcrypt.hash(randomPassword, salt);
 
       const insertRes = await pool.query(
-        `INSERT INTO users (email, password_hash, full_name, profile_picture_url)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, created_at`,
-        [email, password_hash, name || email.split('@')[0], picture || null]
+        `INSERT INTO users (email, password_hash, full_name, profile_picture_url, referral_source)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, created_at`,
+        [email, password_hash, name || email.split('@')[0], picture || null, referral_source || null]
       );
       user = insertRes.rows[0];
     }
