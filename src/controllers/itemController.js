@@ -157,10 +157,11 @@ exports.getItemById = async (req, res) => {
   }
 };
 
-// Search items by location (nearby) — now respects post_type (lost vs found)
+// Search items by location (nearby) — supports post_type, category, search, state
+// combined with the radius filter, so Near Me can be used alongside normal filters.
 exports.searchNearby = async (req, res) => {
   try {
-    const { lat, lng, radius = 50, post_type } = req.query;
+    const { lat, lng, radius = 25, post_type, category, search, state } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Latitude and longitude required' });
@@ -193,10 +194,30 @@ exports.searchNearby = async (req, res) => {
       longitude - lngDelta,
       longitude + lngDelta
     ];
+    let paramIndex = 5;
 
     if (post_type === 'lost' || post_type === 'found') {
-      query += ` AND i.post_type = $5`;
+      query += ` AND i.post_type = $${paramIndex}`;
       params.push(post_type);
+      paramIndex++;
+    }
+
+    if (category) {
+      query += ` AND i.category = $${paramIndex}`;
+      params.push(category);
+      paramIndex++;
+    }
+
+    if (state) {
+      query += ` AND i.found_state ILIKE $${paramIndex}`;
+      params.push(state);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (i.title ILIKE $${paramIndex} OR i.description ILIKE $${paramIndex})`;
+      params.push(`%${search}%`);
+      paramIndex++;
     }
 
     query += ` ORDER BY i.created_at DESC LIMIT 50`;
