@@ -33,3 +33,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_source TEXT;
 -- Student verification: mark accounts with a .edu email domain
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_verified BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_domain TEXT;
+
+-- Human-readable school name derived from the verified .edu domain
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_name TEXT;
