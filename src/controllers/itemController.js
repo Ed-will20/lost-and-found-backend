@@ -157,10 +157,10 @@ exports.getItemById = async (req, res) => {
   }
 };
 
-// Search items by location (nearby)
+// Search items by location (nearby) — now respects post_type (lost vs found)
 exports.searchNearby = async (req, res) => {
   try {
-    const { lat, lng, radius = 50 } = req.query;
+    const { lat, lng, radius = 50, post_type } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Latitude and longitude required' });
@@ -177,24 +177,31 @@ exports.searchNearby = async (req, res) => {
     const latDelta = searchRadius / 69;
     const lngDelta = searchRadius / (69 * Math.cos(latitude * Math.PI / 180));
 
-    const result = await pool.query(
-      `SELECT i.*, u.full_name as finder_name, u.rating as finder_rating
-       FROM items i
-       JOIN users u ON i.user_id = u.id
-       WHERE i.status = 'found'
-         AND i.found_lat IS NOT NULL
-         AND i.found_lng IS NOT NULL
-         AND i.found_lat BETWEEN $1 AND $2
-         AND i.found_lng BETWEEN $3 AND $4
-       ORDER BY i.created_at DESC
-       LIMIT 50`,
-      [
-        latitude - latDelta,
-        latitude + latDelta,
-        longitude - lngDelta,
-        longitude + lngDelta
-      ]
-    );
+    let query = `
+      SELECT i.*, u.full_name as finder_name, u.rating as finder_rating
+      FROM items i
+      JOIN users u ON i.user_id = u.id
+      WHERE i.status = 'found'
+        AND i.found_lat IS NOT NULL
+        AND i.found_lng IS NOT NULL
+        AND i.found_lat BETWEEN $1 AND $2
+        AND i.found_lng BETWEEN $3 AND $4
+    `;
+    const params = [
+      latitude - latDelta,
+      latitude + latDelta,
+      longitude - lngDelta,
+      longitude + lngDelta
+    ];
+
+    if (post_type === 'lost' || post_type === 'found') {
+      query += ` AND i.post_type = $5`;
+      params.push(post_type);
+    }
+
+    query += ` ORDER BY i.created_at DESC LIMIT 50`;
+
+    const result = await pool.query(query, params);
 
     res.json({
       items: result.rows,
@@ -319,7 +326,6 @@ exports.deleteItem = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to delete this item' });
     }
 
-    // Block deletion if there's a pending or approved claim — must be resolved first
     const blockingClaims = await pool.query(
       `SELECT id, status FROM claims WHERE item_id = $1 AND status IN ('pending', 'approved')`,
       [id]
