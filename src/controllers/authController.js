@@ -13,6 +13,17 @@ const generateToken = (userId) => {
   });
 };
 
+// Determine .edu verification status from an email address
+const EDU_DOMAIN_REGEX = /\.edu$/i;
+const getSchoolInfo = (email) => {
+  const domain = (email || '').split('@')[1]?.toLowerCase() || '';
+  const verified = EDU_DOMAIN_REGEX.test(domain);
+  return {
+    school_verified: verified,
+    school_domain: verified ? domain : null,
+  };
+};
+
 // Register new user
 exports.register = async (req, res) => {
   try {
@@ -26,11 +37,12 @@ exports.register = async (req, res) => {
     }
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
+    const { school_verified, school_domain } = getSchoolInfo(email);
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code, referral_source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, email, full_name, city, state, zip_code, referral_source, created_at`,
-      [email, password_hash, full_name, phone_number, city, state, zip_code, referral_source || null]
+      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code, referral_source, school_verified, school_domain)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, email, full_name, city, state, zip_code, referral_source, school_verified, school_domain, created_at`,
+      [email, password_hash, full_name, phone_number, city, state, zip_code, referral_source || null, school_verified, school_domain]
     );
     const user = result.rows[0];
     const token = generateToken(user.id);
@@ -43,7 +55,9 @@ exports.register = async (req, res) => {
         full_name: user.full_name,
         city: user.city,
         state: user.state,
-        zip_code: user.zip_code
+        zip_code: user.zip_code,
+        school_verified: user.school_verified,
+        school_domain: user.school_domain
       }
     });
   } catch (error) {
@@ -84,7 +98,9 @@ exports.login = async (req, res) => {
         city: user.city,
         state: user.state,
         zip_code: user.zip_code,
-        profile_picture_url: user.profile_picture_url
+        profile_picture_url: user.profile_picture_url,
+        school_verified: user.school_verified,
+        school_domain: user.school_domain
       }
     });
   } catch (error) {
@@ -121,12 +137,28 @@ exports.googleAuth = async (req, res) => {
       // Existing user — log them in
       user = result.rows[0];
 
-      // Backfill profile picture if they don't have one yet
-      if (!user.profile_picture_url && picture) {
+      // Backfill profile picture and school verification if not already set
+      const needsPictureBackfill = !user.profile_picture_url && picture;
+      const needsSchoolBackfill = user.school_domain === null && user.school_verified !== true
+        ? getSchoolInfo(email)
+        : null;
+      const schoolBackfill = needsSchoolBackfill || {};
+
+      if (needsPictureBackfill || (needsSchoolBackfill && needsSchoolBackfill.school_verified)) {
         const updateRes = await pool.query(
-          `UPDATE users SET profile_picture_url = $1, updated_at = NOW() WHERE id = $2
-           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, created_at`,
-          [picture, user.id]
+          `UPDATE users
+           SET profile_picture_url = COALESCE($1, profile_picture_url),
+               school_verified = COALESCE(NULLIF($2, FALSE), school_verified, FALSE),
+               school_domain = COALESCE($3, school_domain),
+               updated_at = NOW()
+           WHERE id = $4
+           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, created_at`,
+          [
+            needsPictureBackfill ? picture : null,
+            schoolBackfill.school_verified || false,
+            schoolBackfill.school_domain || null,
+            user.id
+          ]
         );
         user = updateRes.rows[0];
       }
@@ -135,12 +167,13 @@ exports.googleAuth = async (req, res) => {
       const randomPassword = crypto.randomBytes(32).toString('hex');
       const salt = await bcrypt.genSalt(10);
       const password_hash = await bcrypt.hash(randomPassword, salt);
+      const { school_verified, school_domain } = getSchoolInfo(email);
 
       const insertRes = await pool.query(
-        `INSERT INTO users (email, password_hash, full_name, profile_picture_url, referral_source)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, created_at`,
-        [email, password_hash, name || email.split('@')[0], picture || null, referral_source || null]
+        `INSERT INTO users (email, password_hash, full_name, profile_picture_url, referral_source, school_verified, school_domain)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, created_at`,
+        [email, password_hash, name || email.split('@')[0], picture || null, referral_source || null, school_verified, school_domain]
       );
       user = insertRes.rows[0];
     }
@@ -159,6 +192,8 @@ exports.googleAuth = async (req, res) => {
         profile_picture_url: user.profile_picture_url,
         phone_number: user.phone_number,
         rating: user.rating,
+        school_verified: user.school_verified,
+        school_domain: user.school_domain,
         created_at: user.created_at
       }
     });
@@ -173,7 +208,7 @@ exports.getProfile = async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, email, full_name, phone_number, city, state, zip_code,
-              profile_picture_url, verification_status, rating, created_at
+              profile_picture_url, verification_status, rating, school_verified, school_domain, created_at
        FROM users WHERE id = $1`,
       [req.userId]
     );
@@ -200,7 +235,7 @@ exports.uploadProfilePicture = async (req, res) => {
       `UPDATE users SET profile_picture_url = $1, updated_at = NOW()
        WHERE id = $2
        RETURNING id, email, full_name, phone_number, city, state, zip_code,
-                 profile_picture_url, verification_status, rating, created_at`,
+                 profile_picture_url, verification_status, rating, school_verified, school_domain, created_at`,
       [profile_picture_url, req.userId]
     );
 

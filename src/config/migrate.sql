@@ -29,3 +29,7 @@ ALTER TABLE items ADD CONSTRAINT items_post_type_check CHECK (post_type IN ('los
 
 -- Referral tracking: tag which QR code / flier / link a user came from
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_source TEXT;
+
+-- Student verification: mark accounts with a .edu email domain
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_domain TEXT;
