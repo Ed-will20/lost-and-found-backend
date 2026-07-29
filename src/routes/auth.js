@@ -5,7 +5,6 @@ const authMiddleware = require('../middleware/auth');
 const validate = require('../middleware/validation');
 const upload = require('../middleware/upload');
 const router = express.Router();
-
 // Register
 router.post(
   '/register',
@@ -17,11 +16,11 @@ router.post(
     body('state').optional().trim(),
     body('zip_code').optional().trim(),
     body('referral_source').optional().trim(),
+    body('home_campus').optional().trim(),
     validate
   ],
   authController.register
 );
-
 // Login
 router.post(
   '/login',
@@ -32,13 +31,10 @@ router.post(
   ],
   authController.login
 );
-
 // Google OAuth
 router.post('/google', authController.googleAuth);
-
 // Get profile (protected route)
 router.get('/profile', authMiddleware, authController.getProfile);
-
 // Upload/replace profile picture (protected route)
 router.put(
   '/profile-picture',
@@ -46,5 +42,14 @@ router.put(
   upload.single('profile_picture'),
   authController.uploadProfilePicture
 );
-
+// Update home campus (protected route) — always user-editable
+router.put(
+  '/home-campus',
+  authMiddleware,
+  [
+    body('home_campus').optional().trim(),
+    validate
+  ],
+  authController.updateHomeCampus
+);
 module.exports = router;

@@ -35,18 +35,25 @@ exports.createItem = async (req, res) => {
 
     const resolvedPostType = post_type === 'lost' ? 'lost' : 'found';
 
+    // Auto-tag the post with the poster's home campus, if they have one set
+    const campusResult = await pool.query(
+      'SELECT home_campus FROM users WHERE id = $1',
+      [req.userId]
+    );
+    const posterCampus = campusResult.rows[0]?.home_campus || null;
+
     const result = await pool.query(
       `INSERT INTO items (
         user_id, title, description, category, images,
         found_address, found_city, found_state, found_zip,
-        found_lat, found_lng, found_date, is_sensitive, tags, post_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        found_lat, found_lng, found_date, is_sensitive, tags, post_type, campus
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         req.userId, title, description, category, images,
         found_address, found_city, found_state, found_zip,
         latitude, longitude, found_date, is_sensitive || false,
-        parsedTags, resolvedPostType
+        parsedTags, resolvedPostType, posterCampus
       ]
     );
 
@@ -69,6 +76,7 @@ exports.getItems = async (req, res) => {
       city,
       status = 'found',
       post_type,
+      campus,
       limit = 50,
       offset = 0,
       search
@@ -104,6 +112,12 @@ exports.getItems = async (req, res) => {
     if (city) {
       query += ` AND i.found_city ILIKE $${paramIndex}`;
       params.push(`%${city}%`);
+      paramIndex++;
+    }
+
+    if (campus) {
+      query += ` AND i.campus ILIKE $${paramIndex}`;
+      params.push(campus);
       paramIndex++;
     }
 
@@ -157,11 +171,10 @@ exports.getItemById = async (req, res) => {
   }
 };
 
-// Search items by location (nearby) — supports post_type, category, search, state
-// combined with the radius filter, so Near Me can be used alongside normal filters.
+// Search items by location (nearby) — supports post_type, category, search, state, campus
 exports.searchNearby = async (req, res) => {
   try {
-    const { lat, lng, radius = 25, post_type, category, search, state } = req.query;
+    const { lat, lng, radius = 25, post_type, category, search, state, campus } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Latitude and longitude required' });
@@ -211,6 +224,12 @@ exports.searchNearby = async (req, res) => {
     if (state) {
       query += ` AND i.found_state ILIKE $${paramIndex}`;
       params.push(state);
+      paramIndex++;
+    }
+
+    if (campus) {
+      query += ` AND i.campus ILIKE $${paramIndex}`;
+      params.push(campus);
       paramIndex++;
     }
 

@@ -54,10 +54,20 @@ const getSchoolInfo = (email) => {
   };
 };
 
+// Resolve home_campus at registration: a user-typed value always wins
+// (so a verified student can still choose something else); otherwise
+// fall back to the auto-detected school name for .edu users; otherwise null.
+const resolveHomeCampus = (requestedCampus, schoolVerified, schoolName) => {
+  const trimmed = (requestedCampus || '').trim();
+  if (trimmed) return trimmed;
+  if (schoolVerified && schoolName) return schoolName;
+  return null;
+};
+
 // Register new user
 exports.register = async (req, res) => {
   try {
-    const { email, password, full_name, phone_number, city, state, zip_code, referral_source } = req.body;
+    const { email, password, full_name, phone_number, city, state, zip_code, referral_source, home_campus } = req.body;
     const userExists = await pool.query(
       'SELECT * FROM users WHERE email = $1',
       [email]
@@ -68,11 +78,12 @@ exports.register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
     const { school_verified, school_domain, school_name } = getSchoolInfo(email);
+    const resolvedCampus = resolveHomeCampus(home_campus, school_verified, school_name);
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code, referral_source, school_verified, school_domain, school_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, email, full_name, city, state, zip_code, referral_source, school_verified, school_domain, school_name, created_at`,
-      [email, password_hash, full_name, phone_number, city, state, zip_code, referral_source || null, school_verified, school_domain, school_name]
+      `INSERT INTO users (email, password_hash, full_name, phone_number, city, state, zip_code, referral_source, school_verified, school_domain, school_name, home_campus)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, email, full_name, city, state, zip_code, referral_source, school_verified, school_domain, school_name, home_campus, created_at`,
+      [email, password_hash, full_name, phone_number, city, state, zip_code, referral_source || null, school_verified, school_domain, school_name, resolvedCampus]
     );
     const user = result.rows[0];
     const token = generateToken(user.id);
@@ -88,7 +99,8 @@ exports.register = async (req, res) => {
         zip_code: user.zip_code,
         school_verified: user.school_verified,
         school_domain: user.school_domain,
-        school_name: user.school_name
+        school_name: user.school_name,
+        home_campus: user.home_campus
       }
     });
   } catch (error) {
@@ -132,7 +144,8 @@ exports.login = async (req, res) => {
         profile_picture_url: user.profile_picture_url,
         school_verified: user.school_verified,
         school_domain: user.school_domain,
-        school_name: user.school_name
+        school_name: user.school_name,
+        home_campus: user.home_campus
       }
     });
   } catch (error) {
@@ -172,23 +185,28 @@ exports.googleAuth = async (req, res) => {
       const needsPictureBackfill = !user.profile_picture_url && picture;
       const needsSchoolBackfill = !user.school_verified;
       const schoolInfo = needsSchoolBackfill ? getSchoolInfo(email) : null;
+      // Only auto-fill home_campus if the user has never set one —
+      // never overwrite a campus they've already picked/customized.
+      const needsCampusBackfill = !user.home_campus && schoolInfo && schoolInfo.school_verified;
 
-      if (needsPictureBackfill || (schoolInfo && schoolInfo.school_verified)) {
+      if (needsPictureBackfill || (schoolInfo && schoolInfo.school_verified) || needsCampusBackfill) {
         const updateRes = await pool.query(
           `UPDATE users
            SET profile_picture_url = COALESCE($1, profile_picture_url),
                school_verified = COALESCE(NULLIF($2, FALSE), school_verified, FALSE),
                school_domain = COALESCE($3, school_domain),
                school_name = COALESCE($4, school_name),
+               home_campus = COALESCE(home_campus, $6),
                updated_at = NOW()
            WHERE id = $5
-           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, school_name, created_at`,
+           RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, school_name, home_campus, created_at`,
           [
             needsPictureBackfill ? picture : null,
             schoolInfo ? schoolInfo.school_verified : false,
             schoolInfo ? schoolInfo.school_domain : null,
             schoolInfo ? schoolInfo.school_name : null,
-            user.id
+            user.id,
+            needsCampusBackfill ? schoolInfo.school_name : null
           ]
         );
         user = updateRes.rows[0];
@@ -199,12 +217,13 @@ exports.googleAuth = async (req, res) => {
       const salt = await bcrypt.genSalt(10);
       const password_hash = await bcrypt.hash(randomPassword, salt);
       const { school_verified, school_domain, school_name } = getSchoolInfo(email);
+      const resolvedCampus = resolveHomeCampus(null, school_verified, school_name);
 
       const insertRes = await pool.query(
-        `INSERT INTO users (email, password_hash, full_name, profile_picture_url, referral_source, school_verified, school_domain, school_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, school_name, created_at`,
-        [email, password_hash, name || email.split('@')[0], picture || null, referral_source || null, school_verified, school_domain, school_name]
+        `INSERT INTO users (email, password_hash, full_name, profile_picture_url, referral_source, school_verified, school_domain, school_name, home_campus)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, email, full_name, city, state, zip_code, profile_picture_url, phone_number, rating, referral_source, school_verified, school_domain, school_name, home_campus, created_at`,
+        [email, password_hash, name || email.split('@')[0], picture || null, referral_source || null, school_verified, school_domain, school_name, resolvedCampus]
       );
       user = insertRes.rows[0];
     }
@@ -226,6 +245,7 @@ exports.googleAuth = async (req, res) => {
         school_verified: user.school_verified,
         school_domain: user.school_domain,
         school_name: user.school_name,
+        home_campus: user.home_campus,
         created_at: user.created_at
       }
     });
@@ -240,7 +260,7 @@ exports.getProfile = async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, email, full_name, phone_number, city, state, zip_code,
-              profile_picture_url, verification_status, rating, school_verified, school_domain, school_name, created_at
+              profile_picture_url, verification_status, rating, school_verified, school_domain, school_name, home_campus, created_at
        FROM users WHERE id = $1`,
       [req.userId]
     );
@@ -267,7 +287,7 @@ exports.uploadProfilePicture = async (req, res) => {
       `UPDATE users SET profile_picture_url = $1, updated_at = NOW()
        WHERE id = $2
        RETURNING id, email, full_name, phone_number, city, state, zip_code,
-                 profile_picture_url, verification_status, rating, school_verified, school_domain, school_name, created_at`,
+                 profile_picture_url, verification_status, rating, school_verified, school_domain, school_name, home_campus, created_at`,
       [profile_picture_url, req.userId]
     );
 
@@ -282,5 +302,33 @@ exports.uploadProfilePicture = async (req, res) => {
   } catch (error) {
     console.error('Upload profile picture error:', error);
     res.status(500).json({ error: 'Server error while uploading profile picture' });
+  }
+};
+
+// Update home campus — always user-editable, regardless of auto-detection
+exports.updateHomeCampus = async (req, res) => {
+  try {
+    const { home_campus } = req.body;
+    const trimmed = (home_campus || '').trim();
+
+    const result = await pool.query(
+      `UPDATE users SET home_campus = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, email, full_name, phone_number, city, state, zip_code,
+                 profile_picture_url, verification_status, rating, school_verified, school_domain, school_name, home_campus, created_at`,
+      [trimmed || null, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      message: 'Home campus updated successfully',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Update home campus error:', error);
+    res.status(500).json({ error: 'Server error while updating home campus' });
   }
 };
