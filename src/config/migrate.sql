@@ -36,8 +36,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS school_domain TEXT;
 
 -- Human-readable school name derived from the verified .edu domain
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_name TEXT;
--- Index for near-me radius searches (Update #3)
-CREATE INDEX IF NOT EXISTS idx_items_found_lat_lng ON items (found_lat, found_lng);
 -- Update #4: campus scoping
 ALTER TABLE users ADD COLUMN IF NOT EXISTS home_campus TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS campus TEXT;
