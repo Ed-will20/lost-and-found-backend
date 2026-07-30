@@ -4,15 +4,11 @@ const claimController = require('../controllers/claimController');
 const authMiddleware = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const validate = require('../middleware/validation');
-
 const router = express.Router();
-
 // All routes require authentication
 router.use(authMiddleware);
-
 // Get user's submitted claims
 router.get('/my-claims', claimController.getMyClaims);
-
 // Submit a claim for an item
 router.post(
   '/items/:item_id/claim',
@@ -23,14 +19,12 @@ router.post(
   ],
   claimController.createClaim
 );
-
 // Get all claims for an item (finder only)
 router.get('/items/:item_id/claims', claimController.getItemClaims);
-
 // Approve a claim
 router.put('/claims/:claim_id/approve', claimController.approveClaim);
-
 // Reject a claim
 router.put('/claims/:claim_id/reject', claimController.rejectClaim);
-
+// Mark an approved claim's item as returned (either party may do this)
+router.put('/claims/:claim_id/resolve', claimController.resolveClaim);
 module.exports = router;

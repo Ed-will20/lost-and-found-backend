@@ -99,6 +99,7 @@ exports.getMyClaims = async (req, res) => {
               i.images as item_images,
               i.found_city,
               i.found_state,
+              i.status as item_status,
               u.full_name as finder_name
        FROM claims c
        JOIN items i ON c.item_id = i.id
@@ -254,5 +255,55 @@ exports.rejectClaim = async (req, res) => {
   } catch (error) {
     console.error('Reject claim error:', error);
     res.status(500).json({ error: 'Server error while rejecting claim' });
+  }
+};
+
+// Mark an approved claim's item as returned/resolved.
+// Either the finder (item owner) or the claimer may trigger this —
+// no mutual confirmation required, per product decision.
+exports.resolveClaim = async (req, res) => {
+  try {
+    const { claim_id } = req.params;
+
+    const claimCheck = await pool.query(
+      `SELECT c.*, i.user_id as item_owner_id, i.id as item_id, i.status as item_status
+       FROM claims c
+       JOIN items i ON c.item_id = i.id
+       WHERE c.id = $1`,
+      [claim_id]
+    );
+
+    if (claimCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
+
+    const claim = claimCheck.rows[0];
+
+    if (claim.status !== 'approved') {
+      return res.status(400).json({ error: 'Only approved claims can be marked as returned' });
+    }
+
+    if (claim.item_owner_id !== req.userId && claim.claimer_id !== req.userId) {
+      return res.status(403).json({ error: 'Not authorized to resolve this claim' });
+    }
+
+    if (claim.item_status === 'resolved') {
+      return res.status(400).json({ error: 'This item has already been marked as returned' });
+    }
+
+    await pool.query(
+      `UPDATE items SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [claim.item_id]
+    );
+
+    res.json({
+      message: 'Item marked as returned',
+      claim_id: claim.id,
+      item_id: claim.item_id
+    });
+  } catch (error) {
+    console.error('Resolve claim error:', error);
+    res.status(500).json({ error: 'Server error while resolving claim' });
   }
 };

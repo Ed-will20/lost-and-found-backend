@@ -7,6 +7,8 @@ exports.getMyChats = async (req, res) => {
       `SELECT ch.*,
               i.title as item_title,
               i.images as item_images,
+              i.status as item_status,
+              c.id as claim_id,
               u_finder.full_name as finder_name,
               u_claimer.full_name as claimer_name,
               m.message_text as last_message,
@@ -15,6 +17,7 @@ exports.getMyChats = async (req, res) => {
        JOIN items i ON ch.item_id = i.id
        JOIN users u_finder ON ch.finder_id = u_finder.id
        JOIN users u_claimer ON ch.claimer_id = u_claimer.id
+       LEFT JOIN claims c ON c.item_id = ch.item_id AND c.claimer_id = ch.claimer_id AND c.status = 'approved'
        LEFT JOIN messages m ON m.id = (
          SELECT id FROM messages
          WHERE chat_id = ch.id
@@ -38,17 +41,21 @@ exports.getChatMessages = async (req, res) => {
   try {
     const { chat_id } = req.params;
 
-    // Verify user is part of this chat
+    // Verify user is part of this chat, and pull in claim/resolution/rating status
     const chatCheck = await pool.query(
-      `SELECT ch.*, i.title as item_title, i.images as item_images,
+      `SELECT ch.*, i.title as item_title, i.images as item_images, i.status as item_status,
+              c.id as claim_id,
               u_finder.full_name as finder_name,
-              u_claimer.full_name as claimer_name
+              u_claimer.full_name as claimer_name,
+              r.id as my_rating_id
        FROM chats ch
        JOIN items i ON ch.item_id = i.id
        JOIN users u_finder ON ch.finder_id = u_finder.id
        JOIN users u_claimer ON ch.claimer_id = u_claimer.id
+       LEFT JOIN claims c ON c.item_id = ch.item_id AND c.claimer_id = ch.claimer_id AND c.status = 'approved'
+       LEFT JOIN ratings r ON r.claim_id = c.id AND r.rater_id = $2
        WHERE ch.id = $1`,
-      [chat_id]
+      [chat_id, req.userId]
     );
 
     if (chatCheck.rows.length === 0) {
@@ -79,7 +86,10 @@ exports.getChatMessages = async (req, res) => {
     );
 
     res.json({
-      chat,
+      chat: {
+        ...chat,
+        has_rated: !!chat.my_rating_id
+      },
       messages: messages.rows
     });
   } catch (error) {

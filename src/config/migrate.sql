@@ -39,3 +39,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS school_name TEXT;
 -- Update #4: campus scoping
 ALTER TABLE users ADD COLUMN IF NOT EXISTS home_campus TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS campus TEXT;
+-- Update #5: resolution tracking + ratings/testimonials
+ALTER TABLE items ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE;
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_id UUID REFERENCES claims(id) ON DELETE CASCADE,
+  rater_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  ratee_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  score SMALLINT NOT NULL CHECK (score BETWEEN 1 AND 5),
+  testimonial TEXT,
+  testimonial_public BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(claim_id, rater_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_id);

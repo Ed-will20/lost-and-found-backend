@@ -142,6 +142,31 @@ exports.getItems = async (req, res) => {
   }
 };
 
+// Public stat: how many items have been reunited (resolved) this calendar month.
+// Used for the homepage trust signal.
+exports.getReunitedStats = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) as count
+       FROM items
+       WHERE status = 'resolved'
+         AND resolved_at >= date_trunc('month', CURRENT_DATE)`
+    );
+
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) as count FROM items WHERE status = 'resolved'`
+    );
+
+    res.json({
+      this_month: parseInt(result.rows[0].count),
+      all_time: parseInt(totalResult.rows[0].count)
+    });
+  } catch (error) {
+    console.error('Get reunited stats error:', error);
+    res.status(500).json({ error: 'Server error while fetching stats' });
+  }
+};
+
 // Get single item by ID
 exports.getItemById = async (req, res) => {
   try {

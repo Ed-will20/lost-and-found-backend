@@ -5,19 +5,16 @@ const authMiddleware = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const validate = require('../middleware/validation');
 const router = express.Router();
-
 // Get all items (public, with filters)
 router.get('/', itemController.getItems);
-
 // Search nearby items
 router.get('/nearby', itemController.searchNearby);
-
+// Public "items reunited" stat for the homepage
+router.get('/stats/reunited', itemController.getReunitedStats);
 // Get user's own items (protected)
 router.get('/my-items', authMiddleware, itemController.getMyItems);
-
 // Get single item by ID (public)
 router.get('/:id', itemController.getItemById);
-
 // Create new item (protected, with image upload)
 router.post(
   '/',
@@ -35,7 +32,6 @@ router.post(
   ],
   itemController.createItem
 );
-
 // Update item (protected, with optional image upload)
 router.put(
   '/:id',
@@ -50,8 +46,6 @@ router.put(
   ],
   itemController.updateItem
 );
-
 // Delete item (protected)
 router.delete('/:id', authMiddleware, itemController.deleteItem);
-
 module.exports = router;
