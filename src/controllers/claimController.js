@@ -32,6 +32,12 @@ exports.createClaim = async (req, res) => {
 
     const proof_images = req.files ? req.files.map(file => file.path) : [];
 
+    // Proof images are required -- they're often what the finder actually
+    // decides approval/rejection on, not just the text description.
+    if (proof_images.length === 0) {
+      return res.status(400).json({ error: 'At least one proof image is required to submit a claim' });
+    }
+
     const result = await pool.query(
       `INSERT INTO claims (item_id, claimer_id, proof_images, proof_description)
        VALUES ($1, $2, $3, $4)
@@ -119,7 +125,7 @@ exports.getMyClaims = async (req, res) => {
   }
 };
 
-// Approve a claim — creates a chat between finder and claimer
+// Approve a claim -- creates a chat between finder and claimer
 exports.approveClaim = async (req, res) => {
   try {
     const { claim_id } = req.params;
@@ -193,7 +199,7 @@ exports.approveClaim = async (req, res) => {
           [
             chatId,
             claim.item_owner_id,
-            `Hi! I've approved your claim for "${claim.item_title}". Let's coordinate how to return it — feel free to suggest a public meeting place or a mailing address.`
+            `Hi! I've approved your claim for "${claim.item_title}". Let's coordinate how to return it -- feel free to suggest a public meeting place or a mailing address.`
           ]
         );
 
@@ -221,7 +227,7 @@ exports.approveClaim = async (req, res) => {
   }
 };
 
-// Reject a claim — saves a reason
+// Reject a claim -- saves a reason
 exports.rejectClaim = async (req, res) => {
   try {
     const { claim_id } = req.params;
@@ -259,7 +265,7 @@ exports.rejectClaim = async (req, res) => {
 };
 
 // Mark an approved claim's item as returned/resolved.
-// Either the finder (item owner) or the claimer may trigger this —
+// Either the finder (item owner) or the claimer may trigger this --
 // no mutual confirmation required, per product decision.
 exports.resolveClaim = async (req, res) => {
   try {

@@ -95,15 +95,29 @@ exports.getMyRatingForClaim = async (req, res) => {
   }
 };
 
-// Public testimonials — for outreach/LinkedIn material and (optionally)
+// Converts a full name into a public-safe display name: first name +
+// last initial (e.g. "Jordan Martinez" -> "Jordan M."). Falls back
+// gracefully for single-word names or missing names.
+function toPublicDisplayName(fullName) {
+  if (!fullName || !fullName.trim()) return 'A student';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  const first = parts[0];
+  const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+  return `${first} ${lastInitial}.`;
+}
+
+// Public testimonials -- for outreach/LinkedIn material and (optionally)
 // a homepage showcase. Only returns testimonials explicitly marked public.
+// Disclosure level: first name + last initial only (never full name),
+// per product decision.
 exports.getPublicTestimonials = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
 
     const result = await pool.query(
       `SELECT r.testimonial, r.score, r.created_at,
-              u_ratee.full_name as ratee_name,
+              u_ratee.full_name as ratee_full_name,
               i.title as item_title, i.category
        FROM ratings r
        JOIN claims c ON r.claim_id = c.id
@@ -115,7 +129,17 @@ exports.getPublicTestimonials = async (req, res) => {
       [limit]
     );
 
-    res.json({ testimonials: result.rows });
+    const testimonials = result.rows.map((row) => ({
+      testimonial: row.testimonial,
+      score: row.score,
+      created_at: row.created_at,
+      item_title: row.item_title,
+      category: row.category,
+      ratee_display_name: toPublicDisplayName(row.ratee_full_name)
+      // Note: ratee_full_name is intentionally NOT included in the response.
+    }));
+
+    res.json({ testimonials });
   } catch (error) {
     console.error('Get public testimonials error:', error);
     res.status(500).json({ error: 'Server error while fetching testimonials' });

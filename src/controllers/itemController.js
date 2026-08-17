@@ -284,7 +284,7 @@ exports.updateItem = async (req, res) => {
     const { id } = req.params;
 
     const itemCheck = await pool.query(
-      'SELECT user_id FROM items WHERE id = $1',
+      'SELECT user_id, status FROM items WHERE id = $1',
       [id]
     );
 
@@ -294,6 +294,15 @@ exports.updateItem = async (req, res) => {
 
     if (itemCheck.rows[0].user_id !== req.userId) {
       return res.status(403).json({ error: 'Not authorized to update this item' });
+    }
+
+    // Once an item has an approved claim (or is resolved), lock editing.
+    // A finder silently changing the description/location after a claimant
+    // has already proven ownership against it is a trust/integrity gap.
+    if (itemCheck.rows[0].status !== 'found') {
+      return res.status(409).json({
+        error: 'This item can no longer be edited because it has an active or completed claim.'
+      });
     }
 
     const {
