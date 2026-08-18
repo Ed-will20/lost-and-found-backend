@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const emailService = require('../services/emailService');
 
 // Submit a claim for an item
 exports.createClaim = async (req, res) => {
@@ -7,7 +8,10 @@ exports.createClaim = async (req, res) => {
     const { proof_description } = req.body;
 
     const itemCheck = await pool.query(
-      'SELECT * FROM items WHERE id = $1 AND status = $2',
+      `SELECT i.*, u.email as finder_email, u.full_name as finder_name
+       FROM items i
+       JOIN users u ON i.user_id = u.id
+       WHERE i.id = $1 AND i.status = $2`,
       [item_id, 'found']
     );
 
@@ -44,6 +48,16 @@ exports.createClaim = async (req, res) => {
        RETURNING *`,
       [item_id, req.userId, proof_images, proof_description]
     );
+
+    // Notify the finder that a claim was submitted. Fire-and-forget --
+    // failures are logged inside emailService and never block the response.
+    const claimerResult = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.userId]);
+    emailService.sendClaimSubmittedEmail({
+      finderEmail: item.finder_email,
+      finderName: item.finder_name,
+      claimerName: claimerResult.rows[0]?.full_name || 'Someone',
+      itemTitle: item.title
+    });
 
     res.status(201).json({
       message: 'Claim submitted successfully',
@@ -131,9 +145,11 @@ exports.approveClaim = async (req, res) => {
     const { claim_id } = req.params;
 
     const claimCheck = await pool.query(
-      `SELECT c.*, i.user_id as item_owner_id, i.id as item_id, i.title as item_title
+      `SELECT c.*, i.user_id as item_owner_id, i.id as item_id, i.title as item_title,
+              u_claimer.email as claimer_email, u_claimer.full_name as claimer_name
        FROM claims c
        JOIN items i ON c.item_id = i.id
+       JOIN users u_claimer ON c.claimer_id = u_claimer.id
        WHERE c.id = $1`,
       [claim_id]
     );
@@ -211,6 +227,15 @@ exports.approveClaim = async (req, res) => {
 
       await client.query('COMMIT');
 
+      // Notify the claimant that their claim was approved. Fire-and-forget.
+      emailService.sendClaimDecisionEmail({
+        claimerEmail: claim.claimer_email,
+        claimerName: claim.claimer_name,
+        itemTitle: claim.item_title,
+        approved: true,
+        chatId
+      });
+
       res.json({
         message: 'Claim approved successfully',
         chat_id: chatId
@@ -234,9 +259,11 @@ exports.rejectClaim = async (req, res) => {
     const { rejection_reason } = req.body;
 
     const claimCheck = await pool.query(
-      `SELECT c.*, i.user_id as item_owner_id
+      `SELECT c.*, i.user_id as item_owner_id, i.title as item_title,
+              u_claimer.email as claimer_email, u_claimer.full_name as claimer_name
        FROM claims c
        JOIN items i ON c.item_id = i.id
+       JOIN users u_claimer ON c.claimer_id = u_claimer.id
        WHERE c.id = $1`,
       [claim_id]
     );
@@ -251,11 +278,22 @@ exports.rejectClaim = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to reject this claim' });
     }
 
+    const finalReason = rejection_reason || 'Your claim was not approved by the finder.';
+
     await pool.query(
       `UPDATE claims SET status = $1, rejection_reason = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $3`,
-      ['rejected', rejection_reason || 'Your claim was not approved by the finder.', claim_id]
+      ['rejected', finalReason, claim_id]
     );
+
+    // Notify the claimant that their claim was rejected. Fire-and-forget.
+    emailService.sendClaimDecisionEmail({
+      claimerEmail: claim.claimer_email,
+      claimerName: claim.claimer_name,
+      itemTitle: claim.item_title,
+      approved: false,
+      rejectionReason: finalReason
+    });
 
     res.json({ message: 'Claim rejected' });
   } catch (error) {

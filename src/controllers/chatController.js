@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const emailService = require('../services/emailService');
 
 // Get all chats for the logged-in user
 exports.getMyChats = async (req, res) => {
@@ -108,9 +109,17 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({ error: 'Message cannot be empty' });
     }
 
-    // Verify user is part of this chat
+    // Verify user is part of this chat, and pull in enough info (item
+    // title, both parties' email/name) to send a notification afterward.
     const chatCheck = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
+      `SELECT ch.*, i.title as item_title,
+              u_finder.email as finder_email, u_finder.full_name as finder_name,
+              u_claimer.email as claimer_email, u_claimer.full_name as claimer_name
+       FROM chats ch
+       JOIN items i ON ch.item_id = i.id
+       JOIN users u_finder ON ch.finder_id = u_finder.id
+       JOIN users u_claimer ON ch.claimer_id = u_claimer.id
+       WHERE ch.id = $1`,
       [chat_id]
     );
 
@@ -143,11 +152,23 @@ exports.sendMessage = async (req, res) => {
       'SELECT full_name FROM users WHERE id = $1',
       [req.userId]
     );
+    const senderName = sender.rows[0].full_name;
+
+    // Notify the other party. Fire-and-forget -- failures are logged
+    // inside emailService and never block the response.
+    const isSenderFinder = req.userId === chat.finder_id;
+    emailService.sendNewMessageEmail({
+      recipientEmail: isSenderFinder ? chat.claimer_email : chat.finder_email,
+      recipientName: isSenderFinder ? chat.claimer_name : chat.finder_name,
+      senderName,
+      itemTitle: chat.item_title,
+      chatId: chat_id
+    });
 
     res.status(201).json({
       message: {
         ...result.rows[0],
-        sender_name: sender.rows[0].full_name
+        sender_name: senderName
       }
     });
   } catch (error) {
