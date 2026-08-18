@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { geocodeAddress } = require('../services/geocodeService');
 
 // Create new item (found or lost)
 exports.createItem = async (req, res) => {
@@ -21,8 +22,25 @@ exports.createItem = async (req, res) => {
 
     const images = req.files ? req.files.map(file => file.path) : [];
 
-    const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
-    const longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
+    let latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
+    let longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
+
+    // Manual-entry fallback: if no coordinates came from the frontend
+    // (Places Autocomplete didn't run) but address fields are present,
+    // attempt to geocode server-side. A failure here just leaves lat/lng
+    // null -- the item still works everywhere except Near Me search.
+    if (latitude === null && longitude === null && (found_address || found_city || found_state)) {
+      const geocoded = await geocodeAddress({
+        address: found_address,
+        city: found_city,
+        state: found_state,
+        zip: found_zip
+      });
+      if (geocoded) {
+        latitude = geocoded.lat;
+        longitude = geocoded.lng;
+      }
+    }
 
     let parsedTags = [];
     if (tags) {
@@ -87,6 +105,7 @@ exports.getItems = async (req, res) => {
       FROM items i
       JOIN users u ON i.user_id = u.id
       WHERE i.status = $1
+        AND i.deleted_at IS NULL
     `;
     const params = [status];
     let paramIndex = 2;
@@ -189,14 +208,23 @@ exports.getItemById = async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    res.json({ item: result.rows[0] });
+    const item = result.rows[0];
+
+    // Soft-deleted items return a distinct 410 (Gone) rather than a normal
+    // payload, so the frontend can show "this post was removed" instead
+    // of either a broken page or the full item content.
+    if (item.deleted_at) {
+      return res.status(410).json({ error: 'This item has been removed', removed: true });
+    }
+
+    res.json({ item });
   } catch (error) {
     console.error('Get item error:', error);
     res.status(500).json({ error: 'Server error while fetching item' });
   }
 };
 
-// Search items by location (nearby) — supports post_type, category, search, state, campus
+// Search items by location (nearby) -- supports post_type, category, search, state, campus
 exports.searchNearby = async (req, res) => {
   try {
     const { lat, lng, radius = 25, post_type, category, search, state, campus } = req.query;
@@ -221,6 +249,7 @@ exports.searchNearby = async (req, res) => {
       FROM items i
       JOIN users u ON i.user_id = u.id
       WHERE i.status = 'found'
+        AND i.deleted_at IS NULL
         AND i.found_lat IS NOT NULL
         AND i.found_lng IS NOT NULL
         AND i.found_lat BETWEEN $1 AND $2
@@ -334,8 +363,23 @@ exports.updateItem = async (req, res) => {
       }
     }
 
-    const latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
-    const longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
+    let latitude = found_lat && found_lat !== '' ? parseFloat(found_lat) : null;
+    let longitude = found_lng && found_lng !== '' ? parseFloat(found_lng) : null;
+
+    // Same manual-entry fallback as createItem: if the edit didn't come
+    // with coordinates but did come with address fields, try to geocode.
+    if (latitude === null && longitude === null && (found_address || found_city || found_state)) {
+      const geocoded = await geocodeAddress({
+        address: found_address,
+        city: found_city,
+        state: found_state,
+        zip: found_zip
+      });
+      if (geocoded) {
+        latitude = geocoded.lat;
+        longitude = geocoded.lng;
+      }
+    }
 
     const resolvedPostType = (post_type === 'lost' || post_type === 'found') ? post_type : null;
 
@@ -382,7 +426,10 @@ exports.updateItem = async (req, res) => {
   }
 };
 
-// Delete item
+// Delete item (soft delete)
+// Sets deleted_at instead of removing the row, so that claims (and
+// rejected-claim history/reasons) tied to this item via FK survive the
+// deletion instead of being cascade-deleted along with it.
 exports.deleteItem = async (req, res) => {
   try {
     const { id } = req.params;
@@ -414,7 +461,10 @@ exports.deleteItem = async (req, res) => {
       });
     }
 
-    await pool.query('DELETE FROM items WHERE id = $1', [id]);
+    await pool.query(
+      'UPDATE items SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [id]
+    );
 
     res.json({ message: 'Item deleted successfully' });
   } catch (error) {
@@ -427,7 +477,7 @@ exports.deleteItem = async (req, res) => {
 exports.getMyItems = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM items WHERE user_id = $1 ORDER BY created_at DESC`,
+      `SELECT * FROM items WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC`,
       [req.userId]
     );
 
