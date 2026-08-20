@@ -53,6 +53,15 @@ exports.createItem = async (req, res) => {
 
     const resolvedPostType = post_type === 'lost' ? 'lost' : 'found';
 
+    // Image required for found items -- the finder has the item in hand,
+    // there's no reason they can't photograph it. Lost items are exempt:
+    // the poster no longer has the item, so requiring a photo would block
+    // legitimate posts (e.g. nobody photographs their own phone before
+    // losing it).
+    if (resolvedPostType === 'found' && images.length === 0) {
+      return res.status(400).json({ error: 'At least one image is required for found item posts.' });
+    }
+
     // Auto-tag the post with the poster's home campus, if they have one set
     const campusResult = await pool.query(
       'SELECT home_campus FROM users WHERE id = $1',
