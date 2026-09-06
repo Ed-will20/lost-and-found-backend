@@ -61,5 +61,6 @@ CREATE TABLE IF NOT EXISTS site_feedback (
   name TEXT,
   email TEXT,
   message TEXT NOT NULL,
+  is_public BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

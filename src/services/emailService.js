@@ -85,3 +85,18 @@ exports.sendNewMessageEmail = async ({ recipientEmail, recipientName, senderName
     `)
   });
 };
+
+// Notify the developer (not a user account) whenever a visitor submits
+// feedback. Sent to the existing help@ address, which already forwards
+// to your Gmail -- no new mailbox setup needed.
+exports.sendFeedbackNotificationEmail = async ({ name, email, message }) => {
+  await send({
+    to: 'help@eyefoundyou.com',
+    subject: 'New feedback submitted on EyeFoundYou',
+    html: wrapper(`
+      <p><strong>From:</strong> ${name || 'Anonymous'}${email ? ` (${email})` : ''}</p>
+      <p><strong>Message:</strong></p>
+      <p style="white-space: pre-wrap;">${message}</p>
+    `)
+  });
+};
