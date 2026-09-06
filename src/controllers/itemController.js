@@ -1,6 +1,11 @@
 const pool = require('../config/database');
 const { geocodeAddress } = require('../services/geocodeService');
 
+// Categories treated as sensitive regardless of what the client sends --
+// server is the source of truth here, same pattern as the found-item
+// image requirement, so this can't be bypassed via a raw API call.
+const SENSITIVE_CATEGORIES = ['id_passport', 'documents', 'wallet'];
+
 // Create new item (found or lost)
 exports.createItem = async (req, res) => {
   try {
@@ -53,6 +58,15 @@ exports.createItem = async (req, res) => {
 
     const resolvedPostType = post_type === 'lost' ? 'lost' : 'found';
 
+    // Sensitive item flag: true if the client already said so, OR if the
+    // category itself is one we always treat as sensitive. This is
+    // advisory only -- the item still gets posted either way, since
+    // that's the only way the original owner finds out it's been found.
+    const resolvedIsSensitive =
+      is_sensitive === true ||
+      is_sensitive === 'true' ||
+      SENSITIVE_CATEGORIES.includes(category);
+
     // Image required for found items -- the finder has the item in hand,
     // there's no reason they can't photograph it. Lost items are exempt:
     // the poster no longer has the item, so requiring a photo would block
@@ -79,7 +93,7 @@ exports.createItem = async (req, res) => {
       [
         req.userId, title, description, category, images,
         found_address, found_city, found_state, found_zip,
-        latitude, longitude, found_date, is_sensitive || false,
+        latitude, longitude, found_date, resolvedIsSensitive,
         parsedTags, resolvedPostType, posterCampus
       ]
     );
@@ -355,8 +369,17 @@ exports.updateItem = async (req, res) => {
       found_lng,
       found_date,
       tags,
-      post_type
+      post_type,
+      is_sensitive
     } = req.body;
+
+    // Same rule as createItem: recompute from the submitted category so a
+    // category change during an edit keeps the flag in sync, rather than
+    // leaving a stale value from when the item was first posted.
+    const resolvedIsSensitive =
+      is_sensitive === true ||
+      is_sensitive === 'true' ||
+      SENSITIVE_CATEGORIES.includes(category);
 
     let images = null;
     if (req.files && req.files.length > 0) {
@@ -407,8 +430,9 @@ exports.updateItem = async (req, res) => {
         tags         = COALESCE($11, tags),
         images       = COALESCE($12, images),
         post_type    = COALESCE($13, post_type),
+        is_sensitive = $14,
         updated_at   = CURRENT_TIMESTAMP
-      WHERE id = $14
+      WHERE id = $15
       RETURNING *`,
       [
         title        || null,
@@ -424,6 +448,7 @@ exports.updateItem = async (req, res) => {
         parsedTags,
         images,
         resolvedPostType,
+        resolvedIsSensitive,
         id
       ]
     );
