@@ -55,3 +55,11 @@ CREATE TABLE IF NOT EXISTS ratings (
   UNIQUE(claim_id, rater_id)
 );
 CREATE INDEX IF NOT EXISTS idx_ratings_ratee ON ratings(ratee_id);
+
+CREATE TABLE IF NOT EXISTS site_feedback (
+  id SERIAL PRIMARY KEY,
+  name TEXT,
+  email TEXT,
+  message TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -9,6 +9,7 @@ const itemRoutes = require('./routes/items');
 const claimRoutes = require('./routes/claims');
 const chatRoutes = require('./routes/chat');
 const ratingRoutes = require('./routes/ratings');
+const feedbackRoutes = require('./routes/feedback');
 const app = express();
 const PORT = process.env.PORT || 5000;
 console.log('🔍 Environment Check:');
@@ -46,6 +47,7 @@ app.use('/api/items', itemRoutes);
 app.use('/api', claimRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/ratings', ratingRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   if (err.name === 'MulterError') {
