@@ -44,10 +44,10 @@ app.get('/health', (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use('/api', claimRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/ratings', ratingRoutes);
-app.use('/api/feedback', feedbackRoutes);
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   if (err.name === 'MulterError') {
